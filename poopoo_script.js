@@ -110,41 +110,29 @@
       var W = Math.max(10, Math.round(r.width  * SCALE));
       var H = Math.max(10, Math.round(r.height * SCALE));
 
-      // בסיס: כל התמונות/צורות
-      await loadFrom(H2C_URLS, 'html2canvas');
-      var baseCanvas = await window.html2canvas(root, {
-        backgroundColor: null,
-        scale: SCALE,
-        useCORS: true,
-        allowTaint: false,          // לא מזהם את הקנבס אם יש נכס חיצוני
-        foreignObjectRendering: false
-      });
-
-      // שכבת טקסט נקייה
+      // We will only use dom-to-image-more now.
       await loadFrom(D2I_URLS, 'domtoimage');
-      var domPng = await window.domtoimage.toPng(root, {
-        width: W, height: H,
-        style: { transform:'scale('+SCALE+')', transformOrigin:'top left', background:'transparent' },
-        cacheBust: true
+
+      // Use domtoimage to generate a single PNG of the whole element
+      var dataUrl = await window.domtoimage.toPng(root, {
+        width: W, 
+        height: H,
+        style: { 
+          transform: 'scale(' + SCALE + ')', 
+          transformOrigin: 'top left' 
+        },
+        // These options can help with loading external images
+        cacheBust: true,
+        imagePlaceholder: undefined // Don't use a placeholder if an image fails
       });
 
-      // קומפוזיט: ויז׳ואל למטה, טקסט מעל
-      var out = document.createElement('canvas');
-      out.width = W; out.height = H;
-      var ctx = out.getContext('2d');
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(baseCanvas, 0, 0, W, H);
+      // Directly download the result
+      safeDownload(dataUrl);
 
-      await new Promise(function(res){
-        var img = new Image();
-        img.onload = function(){ ctx.drawImage(img, 0, 0, W, H); res(); };
-        img.crossOrigin = 'anonymous';
-        img.src = domPng;
-      });
-
-      safeDownload(out.toDataURL('image/png'));
     } catch(e){
-      // נחיה עם זה, רק אל תיתקעי על השקופית
+      // Log the error to the console to see what went wrong
+      console.error('Screenshot failed:', e);
+      alert('Sorry, the screenshot could not be created. An error occurred.');
     } finally {
       setVarTrue();
     }
