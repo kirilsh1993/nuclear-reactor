@@ -6,6 +6,12 @@
   var VAR_NAME = 'GoBackTo16';
 
   // מקורות טעינה
+  var D2I_URLS = [
+    'https://cdn.jsdelivr.net/npm/dom-to-image-more@3.4.0/dist/dom-to-image-more.min.js',
+    'https://unpkg.com/dom-to-image-more@3.4.0/dist/dom-to-image-more.min.js',
+    'story_content/dom-to-image-more.min.js',
+    '/story_content/dom-to-image-more.min.js'
+  ];
   var H2C_URLS = [
     'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
     'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js',
@@ -90,20 +96,72 @@
     try{
       await fontsReady();
       await sleep(DELAY);
-      var root = getRoot();
-      
-      // Load html2canvas now.
-      await loadFrom(H2C_URLS, 'html2canvas');
 
-      // Use html2canvas to generate a canvas of the whole element, including the background image.
-      var canvas = await window.html2canvas(root, {
+      var root = getRoot();
+      var r = root.getBoundingClientRect();
+      var W = Math.max(10, Math.round(r.width * SCALE));
+      var H = Math.max(10, Math.round(r.height * SCALE));
+
+      // Load both libraries
+      await Promise.all([
+        loadFrom(H2C_URLS, 'html2canvas'),
+        loadFrom(D2I_URLS, 'domtoimage')
+      ]);
+
+      // Step 1: Use html2canvas to capture the images (circles) and background
+      var h2cCanvas = await window.html2canvas(root, {
         scale: SCALE,
         useCORS: true,
-        allowTaint: true
+        allowTaint: true,
+        backgroundColor: null // Ensures the background is transparent if not already
       });
 
-      // Convert the canvas to a PNG data URL
-      var dataUrl = canvas.toDataURL('image/png');
+      // Step 2: Use dom-to-image-more to capture only the text
+      // We will clone the root and hide everything that is NOT text.
+      var clone = root.cloneNode(true);
+      clone.style.position = 'absolute';
+      clone.style.top = '-9999px';
+      clone.style.left = '-9999px';
+      document.body.appendChild(clone);
+      
+      // Hide all non-text elements to isolate the text.
+      // This is a more aggressive approach, but more likely to work
+      // if text is the only element without a specific class.
+      var elementsToHide = clone.querySelectorAll('div:not(.sl-text-box):not(.slide-text), img, svg, [id*="shape"], canvas, video');
+      elementsToHide.forEach(el => el.style.visibility = 'hidden');
+
+      var textDataUrl = await window.domtoimage.toPng(clone, {
+        width: W,
+        height: H,
+        style: {
+          transform: 'scale(' + SCALE + ')',
+          transformOrigin: 'top left'
+        },
+        cacheBust: true,
+        imagePlaceholder: undefined,
+        bgcolor: 'transparent'
+      });
+
+      // Cleanup the temporary clone
+      document.body.removeChild(clone);
+
+      // Step 3: Combine the two images on a final canvas
+      var finalCanvas = document.createElement('canvas');
+      finalCanvas.width = W;
+      finalCanvas.height = H;
+      var ctx = finalCanvas.getContext('2d');
+
+      // Draw the html2canvas output first
+      ctx.drawImage(h2cCanvas, 0, 0, W, H);
+
+      // Draw the dom-to-image text output on top of it
+      var textImage = new Image();
+      textImage.src = textDataUrl;
+
+      await new Promise(resolve => textImage.onload = resolve);
+      ctx.drawImage(textImage, 0, 0, W, H);
+
+      var dataUrl = finalCanvas.toDataURL('image/png');
 
       // Directly download the result
       safeDownload(dataUrl);
